@@ -52,6 +52,10 @@ private:
         lru_node* next = nullptr;
     };
 
+    bool move_to_head(const std::string& key) const;
+
+    bool clear_space(long int req_space);
+
     // Maximum number of bytes could be stored in this cache.
     // i.e all (keys+values) must be less the _max_size
     std::size_t _max_size;
@@ -60,8 +64,8 @@ private:
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    lru_node* _lru_head = nullptr;
-    lru_node* _lru_tail = nullptr;
+    mutable lru_node* _lru_head = nullptr;
+    mutable lru_node* _lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
     std::map<std::reference_wrapper<const std::string>, lru_node*, std::less<std::string>> _lru_index;
