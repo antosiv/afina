@@ -21,10 +21,8 @@ public:
 
     ~SimpleLRU() override {
         _lru_index.clear();
-        while(_lru_head != nullptr) {
-            auto tmp = _lru_head->prev;
-            delete _lru_head;
-            _lru_head = tmp;
+        while (_lru_head != nullptr) {
+            _lru_head = std::move(_lru_head->prev);
         }
     }
 
@@ -48,13 +46,19 @@ private:
     struct lru_node {
         std::string key;
         std::string value;
-        lru_node* prev = nullptr;
+        std::unique_ptr<lru_node> prev = nullptr;
         lru_node* next = nullptr;
     };
 
-    bool move_to_head(const std::string& key) const;
+    using index_it = std::map<std::reference_wrapper<const std::string>, lru_node*, std::less<std::string>>::const_iterator;
+
+    bool move_to_head(index_it match) const;
 
     bool clear_space(long int req_space);
+
+    bool put_to_head(const std::string &key, const std::string &value);
+
+    bool put_by_match(index_it match, const std::string& value);
 
     // Maximum number of bytes could be stored in this cache.
     // i.e all (keys+values) must be less the _max_size
@@ -64,7 +68,7 @@ private:
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    mutable lru_node* _lru_head = nullptr;
+    mutable std::unique_ptr<lru_node> _lru_head = nullptr;
     mutable lru_node* _lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key

@@ -1,4 +1,5 @@
 #include "SimpleLRU.h"
+#include <iostream>
 
 namespace Afina {
     namespace Backend {
@@ -10,37 +11,11 @@ namespace Afina {
 
             if (match != _lru_index.end()) {
 
-                long int req_space = value.size() - match->second->value.size();
-
-                move_to_head(key);
-
-                clear_space(value.size() - match->second->value.size());
-
-                size += req_space;
-                _lru_head->value = value;
+                if (!put_by_match(match, value)) return false;
 
             } else {
 
-                clear_space(value.size() + key.size());
-
-                if (_lru_head == nullptr) {
-
-                    _lru_head = new lru_node;
-                    _lru_tail = _lru_head;
-
-                } else {
-
-                    auto tmp = new lru_node;
-                    _lru_head->next = tmp;
-                    tmp->prev = _lru_head;
-                    _lru_head = tmp;
-
-                }
-
-                _lru_head->key = key;
-                _lru_head->value = value;
-                size += _lru_head->key.size() + _lru_head->value.size();
-                _lru_index[std::reference_wrapper<const std::string>(_lru_head->key)] = _lru_head;
+                if (!put_to_head(key, value)) return false;
 
             }
 
@@ -50,7 +25,13 @@ namespace Afina {
 // See MapBasedGlobalLockImpl.h
         bool SimpleLRU::PutIfAbsent(const std::string &key, const std::string &value) {
 
-            if (_lru_index.find(std::reference_wrapper<const std::string>(key)) == _lru_index.end()) Put(key, value);
+            auto match = _lru_index.find(std::reference_wrapper<const std::string>(key));
+
+            if (match == _lru_index.end()) {
+
+                if (!put_to_head(key, value)) return false;
+
+            }
             else return false;
 
             return true;
@@ -59,7 +40,13 @@ namespace Afina {
 // See MapBasedGlobalLockImpl.h
         bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 
-            if (_lru_index.find(std::reference_wrapper<const std::string>(key)) != _lru_index.end()) Put(key, value);
+            auto match = _lru_index.find(std::reference_wrapper<const std::string>(key));
+
+            if (match != _lru_index.end()) {
+
+                if (!put_by_match(match, value)) return false;
+
+            }
             else return false;
 
             return true;
@@ -72,15 +59,19 @@ namespace Afina {
 
             if (match != _lru_index.end()) {
 
+                size -= match->second->key.size() + match->second->value.size();
+
                 if (match->second->prev != nullptr) match->second->prev->next = match->second->next;
                 else _lru_tail = match->second->next;
 
-                if (match->second->next != nullptr) match->second->next->prev = match->second->prev;
-                else _lru_head = match->second->prev;
+                if (match->second->next != nullptr) {
 
-                size -= match->second->key.size() + match->second->value.size();
+                    match->second->next->prev = std::move(match->second->prev);
+
+                }
+                else _lru_head = std::move(match->second->prev);
+
                 _lru_index.erase(match);
-                delete match->second;
 
             } else return false;
 
@@ -94,7 +85,7 @@ namespace Afina {
 
             if (match != _lru_index.end()) {
 
-                move_to_head(key);
+                move_to_head(match);
                 value = match->second->value;
 
 
@@ -103,27 +94,26 @@ namespace Afina {
             return true;
         }
 
-        bool SimpleLRU::move_to_head(const std::string &key) const {
+        bool SimpleLRU::move_to_head(Afina::Backend::SimpleLRU::index_it match) const {
 
-            auto match = _lru_index.find(std::reference_wrapper<const std::string>(key));
-
-            if (match->second->key == _lru_tail->key and _lru_tail != _lru_head) {
+            if (match->second->key == _lru_tail->key and _lru_tail != _lru_head.get()) {
 
                 auto tmp = match->second;
-                _lru_tail = _lru_tail->next;
-                _lru_tail->prev = nullptr;
+                _lru_tail = tmp->next;
                 tmp->next = nullptr;
-                tmp->prev = _lru_head;
+                _lru_tail->prev.release();
                 _lru_head->next = tmp;
-                _lru_head = tmp;
+                tmp->prev = std::move(_lru_head);
+                _lru_head.reset(tmp);
 
             } else if (_lru_head->key != match->second->key) {
 
                 match->second->prev->next = match->second->next;
-                match->second->next->prev = match->second->prev;
-                match->second->prev = _lru_head;
+                match->second->next->prev.release();
+                match->second->next->prev = std::move(match->second->prev);
                 _lru_head->next = match->second;
-                _lru_head = match->second;
+                match->second->prev = std::move(_lru_head);
+                _lru_head.reset(match->second);
 
             }
 
@@ -137,14 +127,51 @@ namespace Afina {
 
             while (req_space + size > _max_size) {
 
-                auto tmp = _lru_tail->next;
                 size -= _lru_tail->key.size() + _lru_tail->value.size();
-                tmp->prev = nullptr;
                 _lru_index.erase(_lru_index.find(std::reference_wrapper<const std::string>(_lru_tail->key)));
-                delete _lru_tail;
+                auto tmp = _lru_tail->next;
+                tmp->prev = nullptr;
                 _lru_tail = tmp;
 
             }
+
+            return true;
+        }
+
+        bool SimpleLRU::put_to_head(const std::string &key, const std::string &value) {
+
+            if (!clear_space(value.size() + key.size())) return false;
+
+            if (_lru_head == nullptr) {
+
+                _lru_tail = new lru_node;
+                _lru_head.reset(_lru_tail);
+
+            } else {
+
+                auto tmp = new lru_node;
+                _lru_head->next = tmp;
+                tmp->prev = std::move(_lru_head);
+                _lru_head.reset(tmp);
+
+            }
+
+            _lru_head->key = key;
+            _lru_head->value = value;
+            size += _lru_head->key.size() + _lru_head->value.size();
+            _lru_index[std::reference_wrapper<const std::string>(_lru_head->key)] = _lru_head.get();
+
+            return true;
+        }
+
+        bool SimpleLRU::put_by_match(Afina::Backend::SimpleLRU::index_it match, const std::string& value) {
+
+            move_to_head(match);
+
+            if (!clear_space(value.size() - match->second->value.size())) return false;
+
+            size += value.size() - match->second->value.size();
+            _lru_head->value = value;
 
             return true;
         }
