@@ -50,7 +50,7 @@ private:
         lru_node* next = nullptr;
     };
 
-    using index_it = std::map<std::reference_wrapper<const std::string>, lru_node*, std::less<std::string>>::const_iterator;
+    using index_it = std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>>::const_iterator;
 
     bool move_to_head(index_it match) const;
 
@@ -72,7 +72,7 @@ private:
     mutable lru_node* _lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
-    std::map<std::reference_wrapper<const std::string>, lru_node*, std::less<std::string>> _lru_index;
+    std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>> _lru_index;
 };
 
 } // namespace Backend

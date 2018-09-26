@@ -59,17 +59,17 @@ namespace Afina {
 
             if (match != _lru_index.end()) {
 
-                size -= match->second->key.size() + match->second->value.size();
+                size -= match->second.get().key.size() + match->second.get().value.size();
 
-                if (match->second->prev != nullptr) match->second->prev->next = match->second->next;
-                else _lru_tail = match->second->next;
+                if (match->second.get().prev != nullptr) match->second.get().prev->next = match->second.get().next;
+                else _lru_tail = match->second.get().next;
 
-                if (match->second->next != nullptr) {
+                if (match->second.get().next != nullptr) {
 
-                    match->second->next->prev = std::move(match->second->prev);
+                    match->second.get().next->prev = std::move(match->second.get().prev);
 
                 }
-                else _lru_head = std::move(match->second->prev);
+                else _lru_head = std::move(match->second.get().prev);
 
                 _lru_index.erase(match);
 
@@ -86,7 +86,7 @@ namespace Afina {
             if (match != _lru_index.end()) {
 
                 move_to_head(match);
-                value = match->second->value;
+                value = match->second.get().value;
 
 
             } else return false;
@@ -96,24 +96,24 @@ namespace Afina {
 
         bool SimpleLRU::move_to_head(Afina::Backend::SimpleLRU::index_it match) const {
 
-            if (match->second->key == _lru_tail->key and _lru_tail != _lru_head.get()) {
+            if (match->second.get().key == _lru_tail->key and _lru_tail != _lru_head.get()) {
 
                 auto tmp = match->second;
-                _lru_tail = tmp->next;
-                tmp->next = nullptr;
+                _lru_tail = tmp.get().next;
+                tmp.get().next = nullptr;
                 _lru_tail->prev.release();
-                _lru_head->next = tmp;
-                tmp->prev = std::move(_lru_head);
-                _lru_head.reset(tmp);
+                _lru_head->next = &tmp.get();
+                tmp.get().prev = std::move(_lru_head);
+                _lru_head.reset(&tmp.get());
 
-            } else if (_lru_head->key != match->second->key) {
+            } else if (_lru_head->key != match->second.get().key) {
 
-                match->second->prev->next = match->second->next;
-                match->second->next->prev.release();
-                match->second->next->prev = std::move(match->second->prev);
-                _lru_head->next = match->second;
-                match->second->prev = std::move(_lru_head);
-                _lru_head.reset(match->second);
+                match->second.get().prev->next = match->second.get().next;
+                match->second.get().next->prev.release();
+                match->second.get().next->prev = std::move(match->second.get().prev);
+                _lru_head->next = &match->second.get();
+                match->second.get().prev = std::move(_lru_head);
+                _lru_head.reset(&match->second.get());
 
             }
 
@@ -159,7 +159,7 @@ namespace Afina {
             _lru_head->key = key;
             _lru_head->value = value;
             size += _lru_head->key.size() + _lru_head->value.size();
-            _lru_index[std::reference_wrapper<const std::string>(_lru_head->key)] = _lru_head.get();
+            _lru_index.emplace(std::make_pair(std::reference_wrapper<const std::string>(_lru_head->key), std::reference_wrapper<lru_node>(*_lru_head)));
 
             return true;
         }
@@ -168,9 +168,9 @@ namespace Afina {
 
             move_to_head(match);
 
-            if (!clear_space(value.size() - match->second->value.size())) return false;
+            if (!clear_space(value.size() - match->second.get().value.size())) return false;
 
-            size += value.size() - match->second->value.size();
+            size += value.size() - match->second.get().value.size();
             _lru_head->value = value;
 
             return true;
