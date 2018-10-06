@@ -136,17 +136,12 @@ void ServerImpl::OnRun() {
 
         {
             std::lock_guard<std::mutex> lock(_thread_stuff_lock);
-            if (_thread_count == _max_thread_count && _threads_to_join.empty()) {
+            if (_thread_count == _max_thread_count) {
                 _logger->warn("Threads limit achieved");
                 std::string msg = "SERVER ERROR: Threads limit achieved \r\n";
                 send(client_socket, msg.data(), msg.size(), 0);
                 close(client_socket);
             } else {
-                if (_thread_count == _max_thread_count) {
-                    _threads_to_join.front().join();
-                    _threads_to_join.pop();
-                    _thread_count -= 1;
-                }
                 _running_threads.emplace_front(std::thread());
                 _running_threads.front() =
                     std::thread(&ServerImpl::Worker, this, _running_threads.begin(), client_socket);
@@ -161,10 +156,6 @@ void ServerImpl::OnRun() {
         while (!_running_threads.empty()) {
             _finish_running.wait(lock);
         }
-    }
-    while (!_threads_to_join.empty()) {
-        _threads_to_join.front().join();
-        _threads_to_join.pop();
     }
     _logger->warn("Network stopped");
 }
@@ -258,8 +249,8 @@ void ServerImpl::Worker(std::list<std::thread>::iterator it, int client_socket) 
     // thread stuff
     {
         std::lock_guard<std::mutex> lock(_thread_stuff_lock);
-        _threads_to_join.emplace(std::move(*it));
         _running_threads.erase(it);
+        _thread_count -= 1;
         if (_running_threads.empty() && !running.load()) {
             _finish_running.notify_all();
         }
