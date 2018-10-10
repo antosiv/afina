@@ -61,9 +61,7 @@ private:
     std::thread _thread;
     std::mutex _thread_stuff_lock;
     std::list<std::thread> _running_threads;
-    std::queue<std::thread> _threads_to_join;
     std::condition_variable _finish_running;
-    size_t _thread_count;
     size_t _max_thread_count;
 };
 

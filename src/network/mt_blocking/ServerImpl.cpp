@@ -136,7 +136,7 @@ void ServerImpl::OnRun() {
 
         {
             std::lock_guard<std::mutex> lock(_thread_stuff_lock);
-            if (_thread_count == _max_thread_count) {
+            if (_running_threads.size() == _max_thread_count) {
                 _logger->warn("Threads limit achieved");
                 std::string msg = "SERVER ERROR: Threads limit achieved \r\n";
                 send(client_socket, msg.data(), msg.size(), 0);
@@ -145,13 +145,12 @@ void ServerImpl::OnRun() {
                 _running_threads.emplace_front(std::thread());
                 _running_threads.front() =
                     std::thread(&ServerImpl::Worker, this, _running_threads.begin(), client_socket);
-                _thread_count += 1;
             }
         }
     }
 
     // Cleanup on exit...
-    if (!_running_threads.empty()) {
+    {
         std::unique_lock<std::mutex> lock(_thread_stuff_lock);
         while (!_running_threads.empty()) {
             _finish_running.wait(lock);
@@ -251,7 +250,6 @@ void ServerImpl::Worker(std::list<std::thread>::iterator it, int client_socket) 
         std::lock_guard<std::mutex> lock(_thread_stuff_lock);
         it->detach();
         _running_threads.erase(it);
-        _thread_count -= 1;
         if (_running_threads.empty() && !running.load()) {
             _finish_running.notify_all();
         }
