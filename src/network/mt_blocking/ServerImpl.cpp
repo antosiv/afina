@@ -249,6 +249,7 @@ void ServerImpl::Worker(std::list<std::thread>::iterator it, int client_socket) 
     // thread stuff
     {
         std::lock_guard<std::mutex> lock(_thread_stuff_lock);
+        it->detach();
         _running_threads.erase(it);
         _thread_count -= 1;
         if (_running_threads.empty() && !running.load()) {
